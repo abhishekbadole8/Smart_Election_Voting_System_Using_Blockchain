@@ -133,6 +133,7 @@ describe("Vote session", function () {
     // Stop voting session
     tx = await contract.stop();
     await tx.wait();
+    expect(await contract.voteStatus()).to.equal(2); // Status.FINISHED == 2
 
     // Try stopping again
     await expect(contract.stop()).to.be.reverted;
