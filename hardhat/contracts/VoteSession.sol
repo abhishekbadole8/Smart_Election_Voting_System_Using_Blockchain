@@ -46,6 +46,7 @@ contract VoteSession is Ownable {
   uint256 public startDate;
   uint256 public duration;
   uint8 public numberOfCandidates;
+  string public title;
   mapping(address => uint8) public votes;
 
   modifier isCandidateRegistrationOpen() {
@@ -61,10 +62,11 @@ contract VoteSession is Ownable {
     _;
   }
 
-  constructor(uint256 _startDate, uint256 _duration) {
+  constructor(string memory _title, uint256 _startDate, uint256 _duration) {
     voteStatus = Status.CANDIDATE_REGISTER_OPEN;
     startDate = _startDate;
     duration = _duration;
+    title = _title;
   }
 
   /// @notice Function called when registering a new candidate

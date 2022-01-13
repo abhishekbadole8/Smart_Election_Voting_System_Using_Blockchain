@@ -15,7 +15,7 @@ describe("Vote session", function () {
     const startDate = (await getBlockTimestamp()) + 300; // NOW + 5 minutes
     const duration = 600; // 10 minutes
 
-    contract = await VoteSession.deploy(startDate, duration);
+    contract = await VoteSession.deploy("Vote session", startDate, duration);
 
     await contract.deployed();
   });
