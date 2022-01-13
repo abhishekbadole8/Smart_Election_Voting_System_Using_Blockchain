@@ -13,16 +13,26 @@ contract VoteSession is Ownable {
   /// @param _timestamp Time when the candidate was registered
   /// @param _address The address of the candidate that has been registered
   /// @param _name The name of the candidate that has been registered
-  event CandidateRegistered(uint256 _timestamp, address _address, string _name);
+  /// @param _id The ID of the registered candidate
+  event CandidateRegistered(
+    uint256 _timestamp,
+    address _address,
+    string _name,
+    uint8 _id
+  );
 
   /// @notice Event emitted when the voting is started
   /// @param _timestamp Time when the voting session has started
   event VotingStarted(uint256 _timestamp);
 
+  /// @notice Event emitted when the voting has ended
+  /// @param _timestamp Time when the voting session has ended
+  event VotingEnded(uint256 _timestamp);
+
   struct Candidate {
     uint256 registered_at;
-    address wallet_address;
     string name;
+    uint8 id;
   }
 
   enum Status {
@@ -36,6 +46,7 @@ contract VoteSession is Ownable {
   uint256 public startDate;
   uint256 public duration;
   uint8 public numberOfCandidates;
+  mapping(address => uint8) public votes;
 
   modifier isCandidateRegistrationOpen() {
     require(
@@ -65,20 +76,21 @@ contract VoteSession is Ownable {
     external
     isCandidateRegistrationOpen
   {
-    require(
-      candidates[_address].wallet_address == address(0),
-      "Candidate already registered."
-    );
-
-    candidates[_address] = Candidate({
-      name: _name,
-      wallet_address: _address,
-      registered_at: block.timestamp
-    });
+    require(candidates[_address].id == 0, "Candidate already registered.");
 
     numberOfCandidates++;
+    candidates[_address] = Candidate({
+      name: _name,
+      registered_at: block.timestamp,
+      id: numberOfCandidates
+    });
 
-    emit CandidateRegistered(block.timestamp, _address, _name);
+    emit CandidateRegistered(
+      block.timestamp,
+      _address,
+      _name,
+      numberOfCandidates
+    );
   }
 
   /// @notice Function called when starting the voting process
@@ -91,5 +103,27 @@ contract VoteSession is Ownable {
     voteStatus = Status.VOTING;
 
     emit VotingStarted(block.timestamp);
+  }
+
+  /// @notice Function called when casting a vote
+  /// @dev Function will revert if user already voted or the candidate does not exist.
+  function vote(uint8 _candidateId) external isVotingOpen {
+    require(votes[msg.sender] == 0, "You already voted.");
+    require(_candidateId <= numberOfCandidates, "Candidate does not exist.");
+
+    votes[msg.sender] = _candidateId;
+  }
+
+  /// @notice Function called when closing the voting session
+  /// @dev Function will rever if not enough time has elapsed since voting has started.
+  function stop() external isVotingOpen {
+    require(
+      block.timestamp >= startDate + duration,
+      "Voting cannot be ended now."
+    );
+
+    voteStatus = Status.FINISHED;
+
+    emit VotingEnded(block.timestamp);
   }
 }

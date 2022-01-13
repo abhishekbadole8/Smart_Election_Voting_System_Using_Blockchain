@@ -43,7 +43,7 @@ describe("Vote session", function () {
     // Check that the candidate has been registered successfully
     const candidate = await contract.candidates(owner.address);
     expect(candidate.name).to.be.equal("Contract owner");
-    expect(candidate.wallet_address).to.be.equal(owner.address);
+    expect(candidate.id).to.be.equal(1);
     expect(candidate.registered_at).to.be.equal(await getBlockTimestamp());
   });
 
@@ -80,5 +80,61 @@ describe("Vote session", function () {
 
     await expect(contract.start()).to.be.ok;
     expect(await contract.voteStatus()).to.equal(1); // Status.VOTING == 1
+  });
+
+  it("should allow voting after session is started", async () => {
+    // Add candidates
+    for (let i = 0; i < 3; i++) {
+      const tx = await contract.registerCandidate(
+        `0x000000000000000000000000000000000000000${i + 1}`,
+        "Contract owner"
+      );
+      await tx.wait();
+    }
+    await network.provider.send("evm_setNextBlockTimestamp", [
+      (await getBlockTimestamp()) + 300,
+    ]);
+
+    // Start voting
+    let tx = await contract.start();
+    await tx.wait();
+
+    // Cast vote with invalid candidate
+    await expect(contract.vote(4)).to.be.reverted;
+
+    // Cast correct vote
+    await expect(contract.vote(3)).to.be.ok;
+
+    // Cast vote again
+    await expect(contract.vote(3)).to.be.reverted;
+  });
+
+  it("should allow closing the voting session", async () => {
+    // Add candidates
+    for (let i = 0; i < 3; i++) {
+      const tx = await contract.registerCandidate(
+        `0x000000000000000000000000000000000000000${i + 1}`,
+        "Contract owner"
+      );
+      await tx.wait();
+    }
+    await network.provider.send("evm_setNextBlockTimestamp", [
+      (await getBlockTimestamp()) + 300,
+    ]);
+
+    // Start voting session
+    let tx = await contract.start();
+    await tx.wait();
+
+    await network.provider.send("evm_setNextBlockTimestamp", [
+      (await getBlockTimestamp()) + 600,
+    ]);
+
+    // Stop voting session
+    tx = await contract.stop();
+    await tx.wait();
+
+    // Try stopping again
+    await expect(contract.stop()).to.be.reverted;
   });
 });
