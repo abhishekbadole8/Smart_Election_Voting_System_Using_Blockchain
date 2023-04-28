@@ -1,131 +1,258 @@
 //SPDX-License-Identifier: MIT
 pragma solidity ^0.8.4;
 
-import "hardhat/console.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+contract VoteSession {
+    event CandidateRegistered(address _address, string _name, uint256 _id);
+    event VotingStarted(uint256 _timestamp);
+    event VotingEnded(uint256 _timestamp);
 
-/// @title A voting session
-/// @author Rares Stanciu
-/// @notice You can use this contract to create a voting session,
-///         register candidates and cast votes.
-contract VoteSession is Ownable {
-  /// @notice Event emitted when a new candidate is registered
-  /// @param _timestamp Time when the candidate was registered
-  /// @param _address The address of the candidate that has been registered
-  /// @param _name The name of the candidate that has been registered
-  /// @param _id The ID of the registered candidate
-  event CandidateRegistered(
-    uint256 _timestamp,
-    address _address,
-    string _name,
-    uint8 _id
-  );
+    error NotOwner();
+    error NotEnoughCandidates();
+    error NotEnoughVotes();
+    error AlreadyVoted();
+    error CandidateDoesNotExist();
+    error AlreadyRegistered();
+    error RegistrationIsClosed();
+    error VotingIsClosed();
+    error CannotRegisterInVotingPeriod();
+    error NotUniqueID();
 
-  /// @notice Event emitted when the voting is started
-  /// @param _timestamp Time when the voting session has started
-  event VotingStarted(uint256 _timestamp);
+    struct Candidate {
+        string name;
+        uint256 id;
+        uint256 voteCount;
+        address candAddress;
+    }
 
-  /// @notice Event emitted when the voting has ended
-  /// @param _timestamp Time when the voting session has ended
-  event VotingEnded(uint256 _timestamp);
+    enum RegistrationStatus {
+        OPEN,
+        CLOSED
+    }
 
-  struct Candidate {
-    uint256 registered_at;
-    string name;
-    uint8 id;
-  }
+    enum VotingStatus {
+        OPEN,
+        CLOSED
+    }
 
-  enum Status {
-    CANDIDATE_REGISTER_OPEN,
-    VOTING,
-    FINISHED
-  }
+    RegistrationStatus public registrationStatus;
+    VotingStatus public votingStatus;
+    mapping(uint256 => Candidate) public candidates;
+    mapping(uint256 => uint256) public indexToId;
+    mapping(address => bool) public alreadyVoted;
+    mapping(address => bool) public alreadyRegisteredCandidate;
+    mapping(address => bool) public voters;
+    address[] public allVoters;
+    Candidate[] public winners;
+    uint256 public numberOfCandidates;
+    uint256 public numberOfWinners;
+    uint256 public totalVotes;
+    address public owner;
 
-  Status public voteStatus;
-  mapping(address => Candidate) public candidates;
-  uint256 public startDate;
-  uint256 public duration;
-  uint8 public numberOfCandidates;
-  string public title;
-  mapping(address => uint8) public votes;
+    constructor() {
+        registrationStatus = RegistrationStatus.CLOSED;
+        votingStatus = VotingStatus.CLOSED;
+        owner = msg.sender;
+    }
 
-  modifier isCandidateRegistrationOpen() {
-    require(
-      voteStatus == Status.CANDIDATE_REGISTER_OPEN,
-      "Candidate registration has ended."
-    );
-    _;
-  }
+    function startNewElection() public checkOwner {
+        registrationStatus = RegistrationStatus.CLOSED;
+        votingStatus = VotingStatus.CLOSED;
+        for (uint256 i = 0; i <= numberOfCandidates; i++) {
+            uint256 ID = indexToId[i];
+            address candidateAddress = candidates[ID].candAddress;
+            alreadyRegisteredCandidate[candidateAddress] = false;
+            address tempAddress;
+            candidates[ID] = Candidate({
+                name: "",
+                id: 0,
+                voteCount: 0,
+                candAddress: tempAddress
+            });
+            indexToId[i] = 0;
+        }
+        for (uint256 i = 0; i < allVoters.length; i++) {
+            alreadyVoted[allVoters[i]] = false;
+            voters[allVoters[i]] = false;
+        }
+        allVoters = new address[](0);
+        for (uint256 i = 0; i < numberOfWinners; i++) {
+            winners.pop();
+        }
+        numberOfCandidates = 0;
+        totalVotes = 0;
+        numberOfWinners = 0;
+    }
 
-  modifier isVotingOpen() {
-    require(voteStatus == Status.VOTING, "Voting is not open.");
-    _;
-  }
+    function registerCandidate(
+        uint256 _id,
+        string memory _name
+    ) public isCandidateRegistrationOpen {
+        if (alreadyRegisteredCandidate[msg.sender]) {
+            revert AlreadyRegistered();
+        }
+        if (candidates[_id].id > 0) {
+            revert NotUniqueID();
+        }
 
-  constructor(string memory _title, uint256 _startDate, uint256 _duration) {
-    voteStatus = Status.CANDIDATE_REGISTER_OPEN;
-    startDate = _startDate;
-    duration = _duration;
-    title = _title;
-  }
+        indexToId[numberOfCandidates] = _id;
+        candidates[_id] = Candidate({
+            name: _name,
+            id: _id,
+            voteCount: 0,
+            candAddress: msg.sender
+        });
+        numberOfCandidates++;
+        alreadyRegisteredCandidate[msg.sender] = true;
 
-  /// @notice Function called when registering a new candidate
-  /// @dev Function will revert if voting has started/ended or if
-  ///      the candidate is already registered.
-  /// @param _address Candidate's address
-  /// @param _name Candidate's name (will be shown in frontend)
-  function registerCandidate(address _address, string memory _name)
-    external
-    isCandidateRegistrationOpen
-  {
-    require(candidates[_address].id == 0, "Candidate already registered.");
+        emit CandidateRegistered(msg.sender, _name, numberOfCandidates);
+    }
 
-    numberOfCandidates++;
-    candidates[_address] = Candidate({
-      name: _name,
-      registered_at: block.timestamp,
-      id: numberOfCandidates
-    });
+    function registerVoter() public {
+        if (voters[msg.sender] == true) {
+            revert AlreadyRegistered();
+        }
 
-    emit CandidateRegistered(
-      block.timestamp,
-      _address,
-      _name,
-      numberOfCandidates
-    );
-  }
+        voters[msg.sender] = true;
+        allVoters.push(msg.sender);
+    }
 
-  /// @notice Function called when starting the voting process
-  /// @dev Function will revert if voting has already started/finished
-  ///      or if there are not at least two candidates registered.
-  function start() external isCandidateRegistrationOpen {
-    require(block.timestamp >= startDate, "Voting cannot start yet.");
-    require(numberOfCandidates > 1, "At least two candidates are necessary.");
+    function registrationStart() public checkOwner {
+        if (votingStatus == VotingStatus.OPEN) {
+            revert CannotRegisterInVotingPeriod();
+        }
+        registrationStatus = RegistrationStatus.OPEN;
+    }
 
-    voteStatus = Status.VOTING;
+    function registrationStop() public checkOwner {
+        registrationStatus = RegistrationStatus.CLOSED;
+    }
 
-    emit VotingStarted(block.timestamp);
-  }
+    function votingStart() public checkOwner {
+        if (numberOfCandidates < 2) {
+            revert NotEnoughCandidates();
+        }
+        if (registrationStatus == RegistrationStatus.OPEN) {
+            registrationStop();
+        }
+        votingStatus = VotingStatus.OPEN;
+    }
 
-  /// @notice Function called when casting a vote
-  /// @dev Function will revert if user already voted or the candidate does not exist.
-  function vote(uint8 _candidateId) external isVotingOpen {
-    require(votes[msg.sender] == 0, "You already voted.");
-    require(_candidateId <= numberOfCandidates, "Candidate does not exist.");
+    function votingStop() public checkOwner {
+        registrationStatus = RegistrationStatus.CLOSED;
+    }
 
-    votes[msg.sender] = _candidateId;
-  }
+    function vote(uint256 _candidateId) public isVotingOpen {
+        if (alreadyVoted[msg.sender]) {
+            revert AlreadyVoted();
+        }
 
-  /// @notice Function called when closing the voting session
-  /// @dev Function will rever if not enough time has elapsed since voting has started.
-  function stop() external isVotingOpen {
-    require(
-      block.timestamp >= startDate + duration,
-      "Voting cannot be ended now."
-    );
+        alreadyVoted[msg.sender] = true;
+        candidates[_candidateId].voteCount++;
+        totalVotes++;
+    }
 
-    voteStatus = Status.FINISHED;
+   
 
-    emit VotingEnded(block.timestamp);
-  }
+    function declareResult() public checkOwner {
+        if (numberOfCandidates < 2) {
+            revert NotEnoughCandidates();
+        }
+        if (totalVotes < 1) {
+            revert NotEnoughVotes();
+        }
+        uint256 mostVotes;
+        for (uint256 i = 0; i < numberOfCandidates; i++) {
+            uint256 id = indexToId[i];
+            if (candidates[id].voteCount > mostVotes) {
+                mostVotes = candidates[id].voteCount;
+            }
+        }
+
+        // if size of winners is greater than 1
+        // then its a draw
+        // Candidate[] memory winners = new Candidate[](numberOfCandidates);
+        for (uint256 i = 0; i < numberOfCandidates; i++) {
+            uint256 id = indexToId[i];
+            if (candidates[id].voteCount == mostVotes) {
+                // winners[i] = candidates[id];
+                winners.push(candidates[id]);
+                numberOfWinners++;
+            }
+        }
+        registrationStatus = RegistrationStatus.CLOSED;
+        votingStatus = VotingStatus.CLOSED;
+    }
+
+    function getWinners() public view returns (Candidate[] memory) {
+        return winners;
+    }
+
+    function getCandidates() public view returns (Candidate[] memory) {
+        Candidate[] memory allCandidates = new Candidate[](numberOfCandidates);
+        for (uint256 i = 0; i < numberOfCandidates; i++) {
+            uint256 id = indexToId[i];
+            allCandidates[i] = candidates[id];
+        }
+        return (allCandidates);
+    }
+
+    function getCandidate(
+        uint256 _candidateId
+    ) public view returns (Candidate memory) {
+        return candidates[_candidateId];
+    }
+
+    function getNumberOfCandidates() public view returns (uint256) {
+        return numberOfCandidates;
+    }
+
+
+    function getTotalVotes() public view returns (uint256) {
+        return totalVotes;
+    }
+
+    function getRegistrationStatus() public view returns (RegistrationStatus) {
+        return registrationStatus;
+    }
+
+    function getVotingStatus() public view returns (VotingStatus) {
+        return votingStatus;
+    }
+
+    function getOwner() public view returns (address) {
+        return owner;
+    }
+
+    function checkVoterIsValidOrNot() public view returns (bool) {
+        return voters[msg.sender];
+    }
+
+    function checkVoterAlreadyVotedOrNot() public view returns (bool) {
+        return alreadyVoted[msg.sender];
+    }
+
+    function checkCandidateAlreadyRegisteredOrNot() public view returns (bool) {
+        return alreadyRegisteredCandidate[msg.sender];
+    }
+
+    modifier isCandidateRegistrationOpen() {
+        if (registrationStatus == RegistrationStatus.CLOSED) {
+            revert RegistrationIsClosed();
+        }
+        _;
+    }
+
+    modifier isVotingOpen() {
+        if (votingStatus == VotingStatus.CLOSED) {
+            revert VotingIsClosed();
+        }
+        _;
+    }
+
+    modifier checkOwner() {
+        if (msg.sender != owner) {
+            revert NotOwner();
+        }
+        _;
+    }
 }

@@ -7,22 +7,6 @@ import styles from "./Hero.module.css";
 const Hero = (): JSX.Element => {
   return (
     <Container maxW="container.lg" pt={32} pb={24}>
-      <Link href="https://github.com/rcstanciu/voting-dapp" passHref>
-        <a target="_blank">
-          <Box
-            display="flex"
-            alignItems="center"
-            color="gray.600"
-            className={styles.github}
-            flexGrow={0}
-          >
-            <Icon as={BsGithub} w={5} h={5} mr={2} />
-            <Text>
-              <b>@rcstanciu/voting-dapp</b>
-            </Text>
-          </Box>
-        </a>
-      </Link>
       <Heading mb={4} mt={4} fontSize={96}>
         Voting Dapp
       </Heading>
